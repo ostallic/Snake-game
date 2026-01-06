@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Simple Snake Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root { --bg:#0f1720; --grid:#0b1220; --snake:#7efc6e; --food:#ff6b6b; --ui:#cbd5e1; }
+    html,body{height:100%;margin:0;font-family:system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:var(--bg);color:var(--ui);display:flex;align-items:center;justify-content:center}
+    .wrap{display:flex;flex-direction:column;align-items:center;gap:12px}
+    canvas{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:4px solid #0b1220;border-radius:8px;image-rendering:pixelated}
+    .hud{display:flex;gap:8px;align-items:center}
+    .btn{background:#0b1220;border:1px solid #122032;color:var(--ui);padding:6px 10px;border-radius:6px;cursor:pointer}
+    .controls{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+    .control-btn{width:46px;height:46px;border-radius:6px;border:1px solid #122032;background:#081018;color:var(--ui);display:flex;align-items:center;justify-content:center;user-select:none;touch-action:manipulation}
+    .small{font-size:12px;color:#9fb0c7}
+    @media (max-width:420px){ canvas{width:320px;height:320px} }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="400" height="400"></canvas>
+    <div class="hud">
+      <div id="score">Score: 0</div>
+      <button id="restart" class="btn">Restart</button>
+      <div class="small">Use Arrow keys or WASD. Press Space to restart after game over.</div>
+    </div>
+    <div class="controls" aria-hidden="true">
+      <!-- simple touch controls -->
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="control-btn" id="up">▲</div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <div class="control-btn" id="left">◀</div>
+          <div class="control-btn" id="down">▼</div>
+          <div class="control-btn" id="right">▶</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Config
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const GRID = 20;                        // size of each cell in px
+    const COLS = canvas.width / GRID;
+    const ROWS = canvas.height / GRID;
+    const scoreEl = document.getElementById('score');
+    const restartBtn = document.getElementById('restart');
+
+    // Game state
+    let snake = [];
+    let dir = {x: 1, y: 0};                 // current direction
+    let nextDir = {x: 1, y: 0};             // buffered direction (prevents reverse)
+    let food = null;
+    let score = 0;
+    let speed = 8;                          // frames per second
+    let timerId = null;
+    let running = false;
+
+    // Initialize / reset game
+    function reset() {
+      snake = [
+        {x: Math.floor(COLS/2), y: Math.floor(ROWS/2)},
+        {x: Math.floor(COLS/2)-1, y: Math.floor(ROWS/2)},
+      ];
+      dir = {x: 1, y: 0};
+      nextDir = {x: 1, y: 0};
+      score = 0;
+      speed = 8;
+      placeFood();
+      running = true;
+      updateScore();
+      startLoop();
+    }
+
+    function placeFood() {
+      // choose a random cell not occupied by the snake
+      while (true) {
+        const f = {x: Math.floor(Math.random()*COLS), y: Math.floor(Math.random()*ROWS)};
+        if (!snake.some(s => s.x === f.x && s.y === f.y)) {
+          food = f;
+          return;
+        }
+      }
+    }
+
+    function updateScore() {
+      scoreEl.textContent = 'Score: ' + score;
+    }
+
+    function startLoop() {
+      stopLoop();
+      timerId = setInterval(gameTick, 1000 / speed);
+    }
+
+    function stopLoop() {
+      if (timerId) {
+        clearInterval(timerId);
+        timerId = null;
+      }
+    }
+
+    function gameTick() {
+      // apply buffered direction (prevents reversing onto yourself)
+      if ((nextDir.x !== -dir.x || nextDir.y !== -dir.y) || snake.length === 1) {
+        dir = nextDir;
+      }
+
+      const head = snake[0];
+      const newHead = { x: head.x + dir.x, y: head.y + dir.y };
+
+      // wall collision
+      if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
+        return endGame();
+      }
+
+      // self collision
+      if (snake.some(s => s.x === newHead.x && s.y === newHead.y)) {
+        return endGame();
+      }
+
+      // eat food
+      snake.unshift(newHead);
+      if (newHead.x === food.x && newHead.y === food.y) {
+        score++;
+        updateScore();
+        placeFood();
+        // speed up slightly every 3 points
+        if (score % 3 === 0) {
+          speed = Math.min(20, speed + 1);
+          startLoop();
+        }
+      } else {
+        snake.pop();
+      }
+
+      draw();
+    }
+
+    function endGame() {
+      stopLoop();
+      running = false;
+      draw(true);
+    }
+
+    // draw everything
+    function draw(gameOver = false) {
+      // clear
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      // optional grid background
+      ctx.fillStyle = '#071018';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // draw food
+      ctx.fillStyle = '#ff6b6b';
+      drawCell(food.x, food.y);
+
+      // draw snake
+      for (let i = 0; i < snake.length; i++) {
+        const s = snake[i];
+        ctx.fillStyle = i === 0 ? '#bfffb0' : '#7efc6e';
+        drawCell(s.x, s.y, i === 0);
+      }
+
+      if (gameOver) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 28px system-ui,Segoe UI,Roboto';
+        ctx.textAlign = 'center';
+        ctx.fillText('Game Over', canvas.width/2, canvas.height/2 - 10);
+        ctx.font = '16px system-ui,Segoe UI,Roboto';
+        ctx.fillText('Press Space or Restart to play again', canvas.width/2, canvas.height/2 + 20);
+      }
+    }
+
+    function drawCell(x,y,rounded=false) {
+      const px = x * GRID;
+      const py = y * GRID;
+      if (rounded) {
+        ctx.beginPath();
+        ctx.fillRect(px+1, py+1, GRID-2, GRID-2);
+        ctx.closePath();
+      } else {
+        ctx.fillRect(px+1, py+1, GRID-2, GRID-2);
+      }
+    }
+
+    // Input handling
+    window.addEventListener('keydown', (e) => {
+      if (!running && e.code === 'Space') { reset(); return; }
+      switch (e.key) {
+        case 'ArrowUp': case 'w': case 'W': nextDir = {x:0,y:-1}; break;
+        case 'ArrowDown': case 's': case 'S': nextDir = {x:0,y:1}; break;
+        case 'ArrowLeft': case 'a': case 'A': nextDir = {x:-1,y:0}; break;
+        case 'ArrowRight': case 'd': case 'D': nextDir = {x:1,y:0}; break;
+      }
+    });
+
+    // Touch / click controls
+    const upBtn = document.getElementById('up');
+    const leftBtn = document.getElementById('left');
+    const downBtn = document.getElementById('down');
+    const rightBtn = document.getElementById('right');
+
+    const bindControl = (el,dirVec) => {
+      el.addEventListener('touchstart', (e)=>{ e.preventDefault(); nextDir = dirVec; }, {passive:false});
+      el.addEventListener('mousedown', ()=> nextDir = dirVec);
+    };
+    bindControl(upBtn, {x:0,y:-1});
+    bindControl(leftBtn, {x:-1,y:0});
+    bindControl(downBtn, {x:0,y:1});
+    bindControl(rightBtn, {x:1,y:0});
+
+    // restart button
+    restartBtn.addEventListener('click', () => reset());
+
+    // Start first game
+    reset();
+
+    // Make canvas crisp on high-DPI displays
+    (function scaleCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      if (dpr === 1) return;
+      const w = canvas.width, h = canvas.height;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.scale(dpr, dpr);
+      draw();
+    })();
+  </script>
+</body>
+</html>
